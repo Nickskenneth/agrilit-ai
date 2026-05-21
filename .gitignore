@@ -1,0 +1,20 @@
+# 1. Virtual Environment & Environment Variables
+venv/
+env/
+.env
+
+# 2. Python Cache & Compiled Files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 3. File Log & OS Junk
+*.log
+.DS_Store
+Thumbs.db
+
+# 4. Foto Testing Lokal 
+*.jpg
+*.png
+*.jpeg
