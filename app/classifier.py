@@ -58,6 +58,16 @@ COMMODITY_CLASS_INDICES: dict[str, list[int]] = {
     "kentang": [6, 7, 8],     # Kentang_EarlyBlight, Healthy, LateBlight
 }
 
+# ============================================================
+# CONFIDENCE THRESHOLD
+# Raw softmax probability minimum agar prediksi diterima.
+# Di bawah threshold → return "Tidak_Teridentifikasi"
+# Ini mencegah false-positive pada foto yang bukan daun tanaman.
+# Nilai 0.40 berarti model harus memberi ≥40% raw probability
+# pada kelas terpilih sebelum prediksi ditampilkan ke pengguna.
+# ============================================================
+RAW_CONFIDENCE_THRESHOLD: float = 0.40
+
 
 class DiseaseClassifier:
     """
@@ -156,19 +166,18 @@ class DiseaseClassifier:
                 masked_probs[idx] = all_probs[idx]
 
             predicted_index = int(np.argmax(masked_probs))
-            # Confidence dihitung dari probabilitas asli (bukan masked)
-            # tapi hanya di-normalize terhadap total probabilitas komoditas ini
-            commodity_total = sum(all_probs[idx] for idx in valid_indices)
-            if commodity_total > 0:
-                confidence_raw = float(all_probs[predicted_index] / commodity_total * 100)
-            else:
-                confidence_raw = float(all_probs[predicted_index] * 100)
+            # Confidence = raw softmax probability kelas terpilih (TIDAK dinormalisasi)
+            # Normalisasi commodity sebelumnya menyebabkan confidence inflation:
+            # contoh: BacterialSpot=0.55, Healthy=0.10 → total=0.65 → 0.55/0.65=84%
+            # padahal raw confidence hanya 55%. Gunakan raw agar lebih jujur.
+            confidence_raw = float(all_probs[predicted_index] * 100)
 
             logger.info(
                 f"Commodity filter: {jenis_tanaman} → "
                 f"valid indices: {valid_indices}, "
                 f"raw probs: {[f'{all_probs[i]:.4f}' for i in valid_indices]}, "
-                f"selected: {predicted_index} ({CLASS_MAPPING[predicted_index]})"
+                f"selected: {predicted_index} ({CLASS_MAPPING[predicted_index]}), "
+                f"raw_confidence: {confidence_raw:.2f}%"
             )
         else:
             # Tanpa filter — prediksi global (semua 9 kelas)
@@ -177,8 +186,31 @@ class DiseaseClassifier:
 
             logger.info(
                 f"Global prediction (no commodity filter) → "
-                f"selected: {predicted_index} ({CLASS_MAPPING[predicted_index]})"
+                f"selected: {predicted_index} ({CLASS_MAPPING[predicted_index]}), "
+                f"raw_confidence: {confidence_raw:.2f}%"
             )
+
+        # ============================================================
+        # THRESHOLD CHECK — Tolak prediksi jika model tidak cukup yakin
+        # Ini mencegah false-positive pada foto yang bukan daun tanaman.
+        # Raw confidence < RAW_CONFIDENCE_THRESHOLD → "Tidak_Teridentifikasi"
+        # ============================================================
+        raw_prob = confidence_raw / 100.0
+        if raw_prob < RAW_CONFIDENCE_THRESHOLD:
+            logger.warning(
+                f"Low confidence: {raw_prob:.4f} < threshold {RAW_CONFIDENCE_THRESHOLD} "
+                f"→ returning Tidak_Teridentifikasi (commodity: {jenis_tanaman})"
+            )
+            return {
+                "success":               True,
+                "filename":              filename,
+                "prediction":            "Tidak_Teridentifikasi",
+                "prediction_id":         "Tidak Dapat Diidentifikasi",
+                "commodity":             jenis_tanaman or "unknown",
+                "confidence":            round(confidence_raw, 2),
+                "confidence_normalized": round(raw_prob, 4),
+                "low_confidence":        True,
+            }
 
         prediction_label    = CLASS_MAPPING[predicted_index]
         prediction_label_id = LABEL_ID_MAPPING[prediction_label]
@@ -200,6 +232,7 @@ class DiseaseClassifier:
             "commodity":             commodity,
             "confidence":            round(confidence_raw, 2),
             "confidence_normalized": round(confidence_raw / 100, 4),
+            "low_confidence":        False,
         }
 
 
