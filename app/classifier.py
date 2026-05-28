@@ -66,7 +66,7 @@ COMMODITY_CLASS_INDICES: dict[str, list[int]] = {
 # Nilai 0.40 berarti model harus memberi ≥40% raw probability
 # pada kelas terpilih sebelum prediksi ditampilkan ke pengguna.
 # ============================================================
-RAW_CONFIDENCE_THRESHOLD: float = 0.40
+RAW_CONFIDENCE_THRESHOLD: float = 0.20
 
 
 class DiseaseClassifier:
